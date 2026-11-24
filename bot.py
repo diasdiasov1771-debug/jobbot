@@ -1,3 +1,4 @@
+import os
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
@@ -202,7 +203,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(t(user_id, "register_name"))
         else:
             users[user_id]["step"] = "done"
-            await query.edit_message_text(f"✅ {t(user_id, 'employer')} sifatida kirdingi!")
+            await query.edit_message_text(f"✅ {t(user_id, 'employer')} sifatida kirdingiz!")
             await context.bot.send_message(user_id, t(user_id, "main_menu"), reply_markup=main_menu_keyboard(user_id))
 
     # CATEGORY (worker registration)
@@ -353,7 +354,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================
 # RUN BOT
 # =====================
-app = ApplicationBuilder().token("8788147931:AAGF_I3CAGgVzHNq3R26wMDbJqrAe-Z_Kpc").build()
+app = ApplicationBuilder().token(os.environ["BOT_TOKEN"]).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(button_handler))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
