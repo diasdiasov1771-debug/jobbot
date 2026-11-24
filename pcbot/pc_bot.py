@@ -1,15 +1,17 @@
 """
 PC Control Bot — kompyuterni Telegram orqali telefondan boshqarish.
 
-Faqat OWNER_ID dagi Telegram foydalanuvchi buyruq bera oladi.
+Faqat OWNER_ID dagi Telegram foydalanuvchi, parolni kiritgandan keyin, buyruq bera oladi.
 Sozlash: pcbot/README.md
 """
 import asyncio
+import hmac
 import io
 import os
 import platform
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import mss
@@ -25,6 +27,14 @@ OWNER_ID = os.environ.get("PC_BOT_OWNER_ID")
 if not TOKEN or not OWNER_ID:
     sys.exit("PC_BOT_TOKEN va PC_BOT_OWNER_ID muhit o'zgaruvchilarini o'rnating (README.md ga qarang).")
 OWNER_ID = int(OWNER_ID)
+PASSWORD = os.environ.get("PC_BOT_PASSWORD")
+if not PASSWORD:
+    sys.exit("PC_BOT_PASSWORD muhit o'zgaruvchisini o'rnating (bot paroli, README.md ga qarang).")
+SESSION_MINUTES = int(os.environ.get("PC_BOT_SESSION_MIN", "30"))  # parol shuncha daqiqa amal qiladi
+MAX_ATTEMPTS = 5          # ketma-ket xato urinishlar
+LOCKOUT_SECONDS = 10 * 60  # shundan keyin bloklash
+
+auth = {"until": 0.0, "fails": 0, "locked_until": 0.0}
 
 OS = platform.system()  # "Windows", "Linux", "Darwin"
 CMD_TIMEOUT = 60
@@ -35,10 +45,14 @@ KEYBOARD = ReplyKeyboardMarkup(
         ["📸 Skrinshot", "📊 Holat"],
         ["🔒 Bloklash", "😴 Uyqu"],
         ["🔄 Qayta yoqish", "⛔ O'chirish"],
-        ["❌ Bekor qilish"],
+        ["❌ Bekor qilish", "🔐 Chiqish"],
     ],
     resize_keyboard=True,
 )
+
+
+def is_unlocked() -> bool:
+    return time.time() < auth["until"]
 
 
 def owner_only(func):
@@ -48,8 +62,42 @@ def owner_only(func):
             if update.message:
                 await update.message.reply_text(f"⛔ Ruxsat yo'q. Sizning ID: {user.id if user else '?'}")
             return
+        if not is_unlocked():
+            if update.message:
+                await update.message.reply_text("🔐 Bot qulflangan. Parolni yozing:")
+            return
+        auth["until"] = time.time() + SESSION_MINUTES * 60  # faollikda sessiyani uzaytirish
         return await func(update, context)
     return wrapper
+
+
+async def try_password(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """Egasi qulflangan holatda yozgan matnni parol sifatida tekshiradi."""
+    try:
+        await update.message.delete()  # parol chatda qolmasin
+    except Exception:
+        pass
+    now = time.time()
+    if now < auth["locked_until"]:
+        mins = int((auth["locked_until"] - now) // 60) + 1
+        await context.bot.send_message(OWNER_ID, f"⛔ Juda ko'p xato urinish. {mins} daqiqadan keyin qayta urining.")
+        return
+    if hmac.compare_digest(text.encode(), PASSWORD.encode()):
+        auth.update(until=now + SESSION_MINUTES * 60, fails=0)
+        await context.bot.send_message(
+            OWNER_ID,
+            f"🔓 Parol to'g'ri. Sessiya {SESSION_MINUTES} daqiqa faolsiz turgandan keyin qulflanadi.\n"
+            "Qo'lda qulflash: /logout yoki 🔐 Chiqish. Yordam: /start",
+            reply_markup=KEYBOARD,
+        )
+    else:
+        auth["fails"] += 1
+        left = MAX_ATTEMPTS - auth["fails"]
+        if left <= 0:
+            auth.update(fails=0, locked_until=now + LOCKOUT_SECONDS)
+            await context.bot.send_message(OWNER_ID, f"⛔ Parol {MAX_ATTEMPTS} marta xato. Bot {LOCKOUT_SECONDS // 60} daqiqaga bloklandi.")
+        else:
+            await context.bot.send_message(OWNER_ID, f"❌ Parol noto'g'ri. Qolgan urinishlar: {left}")
 
 
 async def send_long(update: Update, text: str):
@@ -101,8 +149,14 @@ def power_cmd(action: str) -> str:
 
 # ============ HANDLERS ============
 
-@owner_only
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not user or user.id != OWNER_ID:
+        await update.message.reply_text(f"⛔ Ruxsat yo'q. Sizning ID: {user.id if user else '?'}")
+        return
+    if not is_unlocked():
+        await update.message.reply_text("🔐 Bot parol bilan himoyalangan. Parolni yozing:")
+        return
     await update.message.reply_text(
         f"🖥 {platform.node()} ({OS}) ulangan.\n\n"
         "Buyruqlar:\n"
@@ -113,7 +167,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/get <fayl> — faylni telefonga yuborish\n"
         "Fayl yuborsangiz — Downloads papkasiga saqlanadi\n"
         "/open <url yoki fayl> — ochish\n"
-        "/lock, /sleep, /restart, /shutdown, /cancel",
+        "/lock, /sleep, /restart, /shutdown, /cancel\n"
+        "/logout — botni qulflash (keyin yana parol so'raladi)",
         reply_markup=KEYBOARD,
     )
 
@@ -216,6 +271,14 @@ def power_handler(action: str, msg: str):
     return handler
 
 
+async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not user or user.id != OWNER_ID:
+        return
+    auth["until"] = 0.0
+    await update.message.reply_text("🔐 Bot qulflandi. Ochish uchun parolni yozing.")
+
+
 BUTTONS = {
     "📸 Skrinshot": screenshot,
     "📊 Holat": status,
@@ -224,10 +287,18 @@ BUTTONS = {
     "🔄 Qayta yoqish": power_handler("restart", "🔄 Qayta yoqiladi (bekor qilish: /cancel)"),
     "⛔ O'chirish": power_handler("shutdown", "⛔ O'chiriladi (bekor qilish: /cancel)"),
     "❌ Bekor qilish": power_handler("cancel", "❌ O'chirish/qayta yoqish bekor qilindi."),
+    "🔐 Chiqish": logout,
 }
 
 
 async def button_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user and user.id == OWNER_ID and not is_unlocked():
+        if update.message.text in BUTTONS:  # tugma bosildi — parol urinishi emas
+            await update.message.reply_text("🔐 Bot qulflangan. Parolni yozing:")
+        else:
+            await try_password(update, context, update.message.text)
+        return
     handler = BUTTONS.get(update.message.text)
     if handler:
         await handler(update, context)
@@ -242,6 +313,7 @@ def main():
     app.add_handler(CommandHandler("ls", ls))
     app.add_handler(CommandHandler("get", get_file))
     app.add_handler(CommandHandler("open", open_target))
+    app.add_handler(CommandHandler("logout", logout))
     for name, (action, msg) in {
         "lock": ("lock", "🔒 Bloklanmoqda..."),
         "sleep": ("sleep", "😴 Uyqu rejimi..."),

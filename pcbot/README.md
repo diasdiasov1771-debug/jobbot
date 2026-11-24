@@ -1,7 +1,7 @@
 # 🖥 PC Control Bot — kompyuterni telefondan boshqarish
 
 Bu bot **kompyuteringizda** ishlaydi, siz esa telefondagi Telegram orqali buyruq berasiz.
-Faqat sizning Telegram ID'ingiz qabul qilinadi — boshqalar uchun bot hech narsa qilmaydi.
+Faqat sizning Telegram ID'ingiz qabul qilinadi va bot **parol** bilan himoyalangan — boshqalar uchun bot hech narsa qilmaydi.
 
 ## Imkoniyatlar
 | Buyruq / tugma | Nima qiladi |
@@ -16,6 +16,13 @@ Faqat sizning Telegram ID'ingiz qabul qilinadi — boshqalar uchun bot hech nars
 | 🔒 `/lock`, 😴 `/sleep` | Bloklash, uyqu |
 | 🔄 `/restart`, ⛔ `/shutdown` | Qayta yoqish / o'chirish (30–60 soniya kechikish bilan) |
 | ❌ `/cancel` | O'chirishni bekor qilish |
+| 🔐 Chiqish, `/logout` | Botni qulflash (keyin yana parol so'raladi) |
+
+## 🔐 Parol
+- Bot ishga tushganda **qulflangan** bo'ladi. Telefonda botga parolni oddiy xabar qilib yozing — to'g'ri bo'lsa bot ochiladi.
+- Parol yozilgan xabar chatdan avtomatik o'chiriladi.
+- 30 daqiqa hech narsa qilinmasa bot o'zi qulflanadi (`PC_BOT_SESSION_MIN` bilan o'zgartirish mumkin).
+- 5 marta xato parol → bot 10 daqiqaga bloklanadi.
 
 ## Sozlash (Windows)
 
@@ -28,6 +35,7 @@ Faqat sizning Telegram ID'ingiz qabul qilinadi — boshqalar uchun bot hech nars
    pip install -r requirements.txt
    setx PC_BOT_TOKEN "BotFather_bergan_token"
    setx PC_BOT_OWNER_ID "123456789"
+   setx PC_BOT_PASSWORD "o'zingiz_o'ylagan_parol"
    ```
    `setx` dan keyin `cmd` oynasini yopib, yangisini oching.
 5. Ishga tushiring:
@@ -47,7 +55,7 @@ pythonw "C:\yo'l\pcbot\pc_bot.py"
 ## Linux / macOS
 ```
 pip install -r requirements.txt
-export PC_BOT_TOKEN="..." PC_BOT_OWNER_ID="..."
+export PC_BOT_TOKEN="..." PC_BOT_OWNER_ID="..." PC_BOT_PASSWORD="..."
 python3 pc_bot.py
 ```
 
@@ -55,3 +63,4 @@ python3 pc_bot.py
 - `/cmd` kompyuteringizda istalgan buyruqni bajaradi. Tokenni **hech kimga bermang** va GitHub'ga yozmang.
 - Token oshkor bo'lsa: @BotFather → `/revoke`.
 - `PC_BOT_OWNER_ID` dan boshqa foydalanuvchilar rad etiladi.
+- Telefoningiz boshqa odam qo'liga tushsa ham, parolsiz bot buyruq bajarmaydi. Kuchli parol tanlang.
